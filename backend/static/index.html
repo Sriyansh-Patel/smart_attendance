@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Universal Smart Face & OTP Attendance</title>
+  <link rel="manifest" href="/static/manifest.json">
+  <meta name="theme-color" content="#2563eb">
+  <link rel="stylesheet" href="/static/css/style.css">
+
+  <!-- Google MediaPipe FaceMesh for Interactive Liveness Detection -->
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
+</head>
+<body>
+
+  <div class="container">
+    <header>
+      <div class="header-title">
+        <span>Smart Attendance</span>
+        <span class="badge" id="currentSessionBadge">Active</span>
+      </div>
+      <div class="header-subtitle">Universal Biometric & IoT ESP32 OTP Verification (Office, School & Events)</div>
+
+      <!-- Status & Mode Bar -->
+      <div class="status-bar">
+        <span class="status-pill" id="dbStatusBadge">DB: Checking...</span>
+        <span class="status-pill" id="espStatusBadge">ESP32: Checking...</span>
+        <select id="orgModeSelect" class="mode-select" aria-label="Organization Mode">
+          <option value="general">Mode: General</option>
+          <option value="office">Mode: Office / Workplace</option>
+          <option value="school">Mode: School / University</option>
+          <option value="event">Mode: Event / Workshop</option>
+        </select>
+      </div>
+    </header>
+
+    <!-- Navigation Tabs -->
+    <div class="tabs">
+      <button class="tab-btn active" data-target="tab-attendance">
+        <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        Check-in
+      </button>
+      <button class="tab-btn" data-target="tab-enroll">
+        <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"/></svg>
+        Enroll Face
+      </button>
+      <button class="tab-btn" data-target="tab-teacher">
+        <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg>
+        Admin Panel
+      </button>
+    </div>
+
+    <!-- TAB 1: MARK ATTENDANCE -->
+    <div id="tab-attendance" class="tab-content">
+      <div class="card">
+        <div class="card-title">
+          <span id="checkinTitle">Member Check-in</span>
+          <span style="font-size: 0.8rem; color: var(--text-muted);">Step 1: ID, Session & OTP</span>
+        </div>
+
+        <div class="form-grid form-grid-2">
+          <div class="form-group">
+            <label for="studentIdInput" id="lblCheckinId">Member / Employee / Student ID</label>
+            <input type="text" id="studentIdInput" placeholder="e.g. EMP-104 or STU-042" required autocomplete="off">
+          </div>
+          <div class="form-group">
+            <label for="sessionIdInput" id="lblCheckinSession">Session / Shift ID</label>
+            <input type="text" id="sessionIdInput" placeholder="SESSION_DEFAULT" value="SESSION_DEFAULT" required>
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-top: 1rem;">
+          <label for="otpInput">Enter 6-Digit OTP from Physical ESP32 LED Display</label>
+          <input type="text" id="otpInput" class="otp-input" placeholder="000000" maxlength="6" inputmode="numeric" autocomplete="off">
+        </div>
+
+        <!-- Camera & Liveness Viewport -->
+        <div class="camera-wrapper">
+          <div class="video-container">
+            <video id="webcam" playsinline autoplay muted></video>
+            <canvas id="overlay"></canvas>
+            <div id="faceGuide" class="face-guide"></div>
+            <div class="liveness-banner">
+              <span id="livenessText">Align face inside oval & blink twice</span>
+            </div>
+          </div>
+        </div>
+
+        <button class="btn btn-accent" id="btnSubmitAttendance" onclick="triggerAttendanceSubmission()">
+          <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
+          Mark Attendance Now
+        </button>
+
+        <div id="attendanceResult" class="result-card"></div>
+      </div>
+    </div>
+
+    <!-- TAB 2: ENROLL MEMBER -->
+    <div id="tab-enroll" class="tab-content" style="display: none;">
+      <div class="card">
+        <div class="card-title">
+          <span id="enrollTitle">Enroll New Member</span>
+          <span style="font-size: 0.8rem; color: var(--text-muted);">Multi-Shot ArcFace Capture</span>
+        </div>
+
+        <div class="form-grid form-grid-2">
+          <div class="form-group">
+            <label for="enrollStudentId" id="lblEnrollId">Member / Employee / Student ID</label>
+            <input type="text" id="enrollStudentId" placeholder="e.g. EMP-104 or STU-042" required>
+          </div>
+          <div class="form-group">
+            <label for="enrollName">Full Name</label>
+            <input type="text" id="enrollName" placeholder="e.g. Alex Johnson" required>
+          </div>
+        </div>
+
+        <div class="form-group" style="margin-top: 1rem;">
+          <label for="enrollDept" id="lblEnrollGroup">Department / Group / Team</label>
+          <input type="text" id="enrollDept" placeholder="e.g. Engineering / Class 10A" value="General">
+        </div>
+
+        <!-- Camera Viewport for Enrollment -->
+        <div class="camera-wrapper" style="max-width: 360px;">
+          <div class="video-container">
+            <video id="enrollWebcam" playsinline autoplay muted></video>
+          </div>
+        </div>
+
+        <div style="display: flex; gap: 0.75rem; margin-bottom: 1rem;">
+          <button class="btn btn-outline" type="button" onclick="captureEnrollShot()">
+            <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><path d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+            Capture Shot (1-3)
+          </button>
+        </div>
+
+        <!-- Shots preview grid -->
+        <div class="shots-grid" id="enrollShotsContainer">
+          <!-- Populated by JS -->
+        </div>
+
+        <button class="btn" id="btnSubmitEnroll" onclick="submitEnrollment()" disabled>
+          Complete Enrollment & Save Face Template
+        </button>
+
+        <div id="enrollResult" class="result-card"></div>
+      </div>
+    </div>
+
+    <!-- TAB 3: ADMIN / TEACHER PANEL -->
+    <div id="tab-teacher" class="tab-content" style="display: none;">
+      <div class="card">
+        <div class="card-title">
+          <span id="adminSessionTitle">Active Session / Shift Control</span>
+        </div>
+
+        <div class="form-grid form-grid-2">
+          <div class="form-group">
+            <label for="teacherSessionId" id="lblAdminSessionId">Create / Switch Session ID</label>
+            <input type="text" id="teacherSessionId" placeholder="e.g. SHIFT_MORNING_01">
+          </div>
+          <div class="form-group">
+            <label for="teacherCourseName" id="lblAdminSessionTitle">Session / Shift / Event Name</label>
+            <input type="text" id="teacherCourseName" placeholder="e.g. Morning Engineering Shift">
+          </div>
+        </div>
+
+        <div style="margin-top: 1rem;">
+          <button class="btn btn-outline" onclick="createNewSession()">
+            Activate Session
+          </button>
+        </div>
+
+        <div class="esp-info-box" id="espConnectionBox">
+          <div><strong>ESP32 Hardware Endpoint (OTP is hardware-only):</strong> <code id="espEndpointCode">/api/device/otp</code></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">
+          <span id="enrolledCount">Enrolled Faces & Vectors</span>
+          <button class="btn btn-outline" style="padding: 0.4rem 0.8rem; font-size: 0.8rem; width: auto;" onclick="loadEnrolledMembers()">
+            Refresh
+          </button>
+        </div>
+
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Name</th>
+                <th>Group / Dept</th>
+                <th>Face Vector</th>
+                <th>Registered</th>
+              </tr>
+            </thead>
+            <tbody id="enrolledMembersBody">
+              <!-- Populated by JS -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">
+          <span id="attendanceCount">Attendance Roster</span>
+          <div style="display: flex; gap: 0.5rem;">
+            <button class="btn btn-outline" style="padding: 0.4rem 0.8rem; font-size: 0.8rem;" onclick="loadSessionAttendance()">
+              Refresh
+            </button>
+            <button class="btn btn-accent" style="padding: 0.4rem 0.8rem; font-size: 0.8rem;" onclick="exportCsv()">
+              Export CSV
+            </button>
+          </div>
+        </div>
+
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th id="thMemberId">Member ID</th>
+                <th>Name</th>
+                <th id="thGroup">Group / Dept</th>
+                <th>Check-in Time</th>
+                <th>Confidence</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody id="attendanceTableBody">
+              <!-- Populated by JS -->
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <footer>
+      Universal Smart Face & ESP32 OTP Attendance &bull; OpenAPI: <a href="/docs" target="_blank" style="color: #60a5fa; text-decoration: none;">/docs</a> &bull; Health: <a href="/api/health" target="_blank" style="color: #60a5fa; text-decoration: none;">/api/health</a>
+    </footer>
+  </div>
+
+  <script src="/static/js/liveness.js"></script>
+  <script src="/static/js/app.js"></script>
+</body>
+</html>

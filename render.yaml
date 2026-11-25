@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: smart-attendance-system
+    env: docker
+    plan: free
+    autoDeploy: true
+    envVars:
+      - key: MONGODB_URI
+        sync: false
+      - key: MONGODB_DB_NAME
+        value: smart_attendance
+      - key: DEVICE_SECRET_KEY
+        value: esp32_classroom_key_98765
+      - key: OTP_LIFETIME_SECONDS
+        value: "30"
+      - key: FACE_SIMILARITY_THRESHOLD
+        value: "0.45"
+      - key: DEFAULT_ORG_MODE
+        value: general

@@ -1,0 +1,279 @@
+{
+  "info": {
+    "_postman_id": "8f395b0b-7c42-4e92-934c-1d58284dbca1",
+    "name": "Smart Face & OTP Attendance System API",
+    "description": "Collection for testing IoT ESP32 OTP generation, ArcFace enrollment, mobile attendance verification, and CSV export.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    {
+      "key": "base_url",
+      "value": "http://localhost:8000",
+      "type": "string"
+    },
+    {
+      "key": "device_key",
+      "value": "esp32_classroom_key_98765",
+      "type": "string"
+    },
+    {
+      "key": "session_id",
+      "value": "SESSION_DEFAULT",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "ESP32 Device",
+      "item": [
+        {
+          "name": "POST /api/device/otp (ESP32 Polling)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"device_key\": \"{{device_key}}\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/device/otp",
+              "host": ["{{base_url}}"],
+              "path": ["api", "device", "otp"]
+            },
+            "description": "Called by the ESP32 to authenticate with device_key and retrieve the rotating OTP and remaining expiry seconds."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/device/status",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/device/status",
+              "host": ["{{base_url}}"],
+              "path": ["api", "device", "status"]
+            },
+            "description": "Returns current active session and current unexpired OTP for validation."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Student Enrollment",
+      "item": [
+        {
+          "name": "POST /api/enroll (Multipart Form Data)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "student_id",
+                  "value": "STU-2026-001",
+                  "type": "text"
+                },
+                {
+                  "key": "name",
+                  "value": "Sarah Connor",
+                  "type": "text"
+                },
+                {
+                  "key": "department",
+                  "value": "Computer Science",
+                  "type": "text"
+                },
+                {
+                  "key": "photos",
+                  "type": "file",
+                  "src": []
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/api/enroll",
+              "host": ["{{base_url}}"],
+              "path": ["api", "enroll"]
+            },
+            "description": "Registers a student with ID, Name, and multi-shot face photos."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/enroll (Base64 JSON)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"student_id\": \"STU-2026-002\",\n  \"name\": \"John Doe\",\n  \"department\": \"Robotics\",\n  \"images_base64\": [\n    \"data:image/jpeg;base64,/9j/4AAQSkZJRg...\"\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/enroll",
+              "host": ["{{base_url}}"],
+              "path": ["api", "enroll"]
+            },
+            "description": "Enrolls student via JSON with base64 image data (suitable for web canvas / mobile apps)."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/students",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/students",
+              "host": ["{{base_url}}"],
+              "path": ["api", "students"]
+            },
+            "description": "Lists all registered students."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Attendance Verification",
+      "item": [
+        {
+          "name": "POST /api/attendance (Multipart Form Data)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "student_id",
+                  "value": "STU-2026-001",
+                  "type": "text"
+                },
+                {
+                  "key": "session_id",
+                  "value": "{{session_id}}",
+                  "type": "text"
+                },
+                {
+                  "key": "otp",
+                  "value": "123456",
+                  "type": "text"
+                },
+                {
+                  "key": "face_image",
+                  "type": "file",
+                  "src": []
+                }
+              ]
+            },
+            "url": {
+              "raw": "{{base_url}}/api/attendance",
+              "host": ["{{base_url}}"],
+              "path": ["api", "attendance"]
+            },
+            "description": "Phone sends face image, OTP, student_id, and session_id. Verifies face against database and records attendance."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/attendance (Base64 JSON)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"student_id\": \"STU-2026-001\",\n  \"session_id\": \"{{session_id}}\",\n  \"otp\": \"123456\",\n  \"image_base64\": \"data:image/jpeg;base64,...\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/attendance",
+              "host": ["{{base_url}}"],
+              "path": ["api", "attendance"]
+            },
+            "description": "JSON attendance submission from mobile web browser PWA."
+          },
+          "response": []
+        }
+      ]
+    },
+    {
+      "name": "Teacher Roster & Sessions",
+      "item": [
+        {
+          "name": "GET /api/attendance/{session} (JSON)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/attendance/{{session_id}}",
+              "host": ["{{base_url}}"],
+              "path": ["api", "attendance", "{{session_id}}"]
+            },
+            "description": "Lists attendance records for the given session."
+          },
+          "response": []
+        },
+        {
+          "name": "GET /api/attendance/{session} (CSV Export)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{base_url}}/api/attendance/{{session_id}}?format=csv",
+              "host": ["{{base_url}}"],
+              "path": ["api", "attendance", "{{session_id}}"],
+              "query": [
+                {
+                  "key": "format",
+                  "value": "csv"
+                }
+              ]
+            },
+            "description": "Exports session attendance as a downloadable CSV spreadsheet."
+          },
+          "response": []
+        },
+        {
+          "name": "POST /api/sessions (Create Session)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"session_id\": \"CS101_LAB_01\",\n  \"course_name\": \"Data Structures Lab\"\n}"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/sessions",
+              "host": ["{{base_url}}"],
+              "path": ["api", "sessions"]
+            },
+            "description": "Creates or activates a new attendance session."
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}
