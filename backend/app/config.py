@@ -34,7 +34,10 @@ DEVICE_SECRET_KEY = os.getenv("DEVICE_SECRET_KEY", "esp32_classroom_key_98765")
 OTP_LIFETIME_SECONDS = int(os.getenv("OTP_LIFETIME_SECONDS", "30"))
 
 # Face Recognition Configuration
-FACE_SIMILARITY_THRESHOLD = float(os.getenv("FACE_SIMILARITY_THRESHOLD", "0.45"))
+# 'opencv_sface' uses lightweight YuNet + SFace (~110MB RAM, ideal for 512MB Render free tier)
+# 'auto' tries InsightFace first then falls back to OpenCV SFace
+FACE_BACKEND = os.getenv("FACE_BACKEND", "opencv_sface" if os.getenv("RENDER") else "auto").strip().lower()
+FACE_SIMILARITY_THRESHOLD = float(os.getenv("FACE_SIMILARITY_THRESHOLD", "0.40"))
 MIN_FACE_DETECTION_CONFIDENCE = float(os.getenv("MIN_FACE_DETECTION_CONFIDENCE", "0.60"))
 BLUR_THRESHOLD = float(os.getenv("BLUR_THRESHOLD", "40.0"))
 

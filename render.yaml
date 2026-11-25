@@ -13,7 +13,9 @@ services:
         value: esp32_classroom_key_98765
       - key: OTP_LIFETIME_SECONDS
         value: "30"
+      - key: FACE_BACKEND
+        value: opencv_sface
       - key: FACE_SIMILARITY_THRESHOLD
-        value: "0.45"
+        value: "0.40"
       - key: DEFAULT_ORG_MODE
         value: general

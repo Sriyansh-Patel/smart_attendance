@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import List, Tuple, Optional, Dict, Any
 from .config import (
     MODELS_DIR,
+    FACE_BACKEND,
     FACE_SIMILARITY_THRESHOLD,
     MIN_FACE_DETECTION_CONFIDENCE,
     BLUR_THRESHOLD
@@ -26,19 +27,24 @@ class FaceEngine:
         self._init_engine()
 
     def _init_engine(self):
-        """Attempts to load InsightFace first. If models are not cached or fail, fall back to OpenCV SFace/YuNet."""
-        try:
-            import insightface
-            from insightface.app import FaceAnalysis
-            # Buffalo_s is lightweight and fast for ArcFace
-            app = FaceAnalysis(name="buffalo_s", providers=['CPUExecutionProvider'])
-            app.prepare(ctx_id=0, det_size=(320, 320))
-            self.insightface_app = app
-            self.backend_type = "insightface"
-            print("[FaceEngine] Successfully initialized InsightFace (buffalo_s / ArcFace)")
-            return
-        except Exception as e:
-            print(f"[FaceEngine] InsightFace initialization skipped/failed: {e}. Falling back to OpenCV DNN SFace.")
+        """Selects face engine based on FACE_BACKEND (opencv_sface for low-RAM cloud, auto/insightface locally)."""
+        if FACE_BACKEND in ("auto", "insightface"):
+            try:
+                import insightface
+                from insightface.app import FaceAnalysis
+                # Only load detection & recognition modules to reduce memory footprint
+                app = FaceAnalysis(
+                    name="buffalo_s",
+                    allowed_modules=["detection", "recognition"],
+                    providers=["CPUExecutionProvider"],
+                )
+                app.prepare(ctx_id=0, det_size=(320, 320))
+                self.insightface_app = app
+                self.backend_type = "insightface"
+                print("[FaceEngine] Successfully initialized InsightFace (buffalo_s / ArcFace)")
+                return
+            except Exception as e:
+                print(f"[FaceEngine] InsightFace skipped/failed: {e}. Using OpenCV DNN SFace.")
 
         self._init_opencv_sface()
 
