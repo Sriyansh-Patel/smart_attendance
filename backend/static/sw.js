@@ -1,5 +1,5 @@
 // Smart Attendance PWA Service Worker
-const CACHE_NAME = 'smart-attend-v2';
+const CACHE_NAME = 'smart-attend-v3';
 const STATIC_ASSETS = [
   '/',
   '/static/css/style.css',

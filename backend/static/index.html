@@ -3,9 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>Universal Smart Face & OTP Attendance</title>
+  <title>Smart Face & OTP Attendance Platform</title>
   <link rel="manifest" href="/static/manifest.json">
-  <meta name="theme-color" content="#2563eb">
+  <meta name="theme-color" content="#3b82f6">
   <link rel="stylesheet" href="/static/css/style.css">
 
   <!-- Google MediaPipe FaceMesh for Interactive Liveness Detection -->
@@ -14,229 +14,335 @@
 </head>
 <body>
 
-  <div class="container">
-    <header>
-      <div class="header-title">
-        <span>Smart Attendance</span>
-        <span class="badge" id="currentSessionBadge">Active</span>
-      </div>
-      <div class="header-subtitle">Universal Biometric & IoT ESP32 OTP Verification (Office, School & Events)</div>
+  <div class="app-shell">
+    <!-- Top Header -->
+    <header class="top-header">
+      <div class="header-row">
+        <div class="brand">
+          <div class="brand-icon">SA</div>
+          <div>
+            <div class="brand-title">Smart Attendance</div>
+            <div class="brand-subtitle">Multi-Company Biometric, Location & ESP32 OTP Verification</div>
+          </div>
+        </div>
 
-      <!-- Status & Mode Bar -->
-      <div class="status-bar">
-        <span class="status-pill" id="dbStatusBadge">DB: Checking...</span>
-        <span class="status-pill" id="espStatusBadge">ESP32: Checking...</span>
-        <select id="orgModeSelect" class="mode-select" aria-label="Organization Mode">
-          <option value="general">Mode: General</option>
-          <option value="office">Mode: Office / Workplace</option>
-          <option value="school">Mode: School / University</option>
-          <option value="event">Mode: Event / Workshop</option>
-        </select>
+        <div class="status-bar">
+          <span class="pill" id="dbStatusBadge">DB: Checking...</span>
+          <span class="pill" id="espStatusBadge">ESP32: Checking...</span>
+          <span class="pill info" id="currentSessionBadge">Session: ...</span>
+        </div>
+      </div>
+
+      <div class="header-row">
+        <div class="status-bar" style="width: 100%; justify-content: space-between;">
+          <div style="display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;">
+            <label for="companySelect" style="margin: 0;">Company / Workspace:</label>
+            <select id="companySelect" class="compact-select" aria-label="Select Company"></select>
+          </div>
+          <select id="orgModeSelect" class="compact-select" aria-label="Organization Mode">
+            <option value="general">Mode: General</option>
+            <option value="office">Mode: Office / Workplace</option>
+            <option value="school">Mode: School / University</option>
+            <option value="event">Mode: Event / Workshop</option>
+          </select>
+        </div>
       </div>
     </header>
 
     <!-- Navigation Tabs -->
-    <div class="tabs">
-      <button class="tab-btn active" data-target="tab-attendance">
-        <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
-        Check-in
-      </button>
-      <button class="tab-btn" data-target="tab-enroll">
-        <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M18 9v3m0 0v3m0-3h3m-3 0h-3m-2-5a4 4 0 11-8 0 4 4 0 018 0zM3 20a6 6 0 0112 0v1H3v-1z"/></svg>
-        Enroll Face
-      </button>
-      <button class="tab-btn" data-target="tab-teacher">
-        <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 6h16M4 10h16M4 14h16M4 18h16"/></svg>
-        Admin Panel
-      </button>
-    </div>
+    <nav class="nav-tabs">
+      <button class="tab-btn active" data-target="tab-attendance">Check-in</button>
+      <button class="tab-btn" data-target="tab-enroll">Register Face</button>
+      <button class="tab-btn" data-target="tab-admin">Admin / Company</button>
+    </nav>
 
-    <!-- TAB 1: MARK ATTENDANCE -->
-    <div id="tab-attendance" class="tab-content">
+    <!-- TAB 1: MARK ATTENDANCE (SINGLE USER AT A TIME) -->
+    <section id="tab-attendance" class="tab-content">
       <div class="card">
-        <div class="card-title">
-          <span id="checkinTitle">Member Check-in</span>
-          <span style="font-size: 0.8rem; color: var(--text-muted);">Step 1: ID, Session & OTP</span>
-        </div>
-
-        <div class="form-grid form-grid-2">
-          <div class="form-group">
-            <label for="studentIdInput" id="lblCheckinId">Member / Employee / Student ID</label>
-            <input type="text" id="studentIdInput" placeholder="e.g. EMP-104 or STU-042" required autocomplete="off">
+        <div class="card-header">
+          <div>
+            <div class="card-title" id="checkinTitle">Member Check-in</div>
+            <div class="card-hint">Single-use ESP32 OTP &bull; One person check-in at a time</div>
           </div>
-          <div class="form-group">
-            <label for="sessionIdInput" id="lblCheckinSession">Session / Shift ID</label>
-            <input type="text" id="sessionIdInput" placeholder="SESSION_DEFAULT" value="SESSION_DEFAULT" required>
+          <span class="pill ok" id="liveClockPill">Time: --:--:--</span>
+        </div>
+
+        <div class="split-layout">
+          <div>
+            <div class="form-grid">
+              <div class="form-group">
+                <label for="studentIdInput" id="lblCheckinId">Member ID</label>
+                <input type="text" id="studentIdInput" placeholder="e.g. EMP-104 or STU-042" required autocomplete="off">
+              </div>
+
+              <div class="form-group">
+                <label for="sessionIdInput" id="lblCheckinSession">Active Session / Shift ID</label>
+                <input type="text" id="sessionIdInput" placeholder="SESSION_DEFAULT" value="SESSION_DEFAULT" required>
+              </div>
+
+              <div class="form-group">
+                <label for="otpInput">6-Digit OTP (Shown on Physical ESP32 LED Matrix)</label>
+                <input type="text" id="otpInput" class="otp-input" placeholder="000000" maxlength="6" inputmode="numeric" autocomplete="off">
+              </div>
+            </div>
+
+            <div class="telemetry-strip">
+              <div class="telemetry-item">
+                <span id="gpsStatusText">Location: Requesting GPS...</span>
+              </div>
+              <button type="button" class="btn btn-outline btn-sm" onclick="refreshGeolocation()">Refresh GPS</button>
+            </div>
+
+            <div style="margin-top: 1rem;">
+              <button class="btn btn-accent" id="btnSubmitAttendance" onclick="triggerAttendanceSubmission()">
+                Mark Attendance Now
+              </button>
+            </div>
+
+            <div id="attendanceResult" class="result-card"></div>
           </div>
-        </div>
 
-        <div class="form-group" style="margin-top: 1rem;">
-          <label for="otpInput">Enter 6-Digit OTP from Physical ESP32 LED Display</label>
-          <input type="text" id="otpInput" class="otp-input" placeholder="000000" maxlength="6" inputmode="numeric" autocomplete="off">
-        </div>
-
-        <!-- Camera & Liveness Viewport -->
-        <div class="camera-wrapper">
-          <div class="video-container">
-            <video id="webcam" playsinline autoplay muted></video>
-            <canvas id="overlay"></canvas>
-            <div id="faceGuide" class="face-guide"></div>
-            <div class="liveness-banner">
-              <span id="livenessText">Align face inside oval & blink twice</span>
+          <div>
+            <div class="camera-frame">
+              <div class="video-container">
+                <video id="webcam" class="camera-video" playsinline autoplay muted></video>
+                <canvas id="overlay"></canvas>
+                <div id="faceGuide" class="face-guide"></div>
+                <div class="liveness-banner">
+                  <span id="livenessText">Align face inside oval & blink twice</span>
+                </div>
+              </div>
             </div>
           </div>
         </div>
-
-        <button class="btn btn-accent" id="btnSubmitAttendance" onclick="triggerAttendanceSubmission()">
-          <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"/></svg>
-          Mark Attendance Now
-        </button>
-
-        <div id="attendanceResult" class="result-card"></div>
       </div>
-    </div>
+    </section>
 
-    <!-- TAB 2: ENROLL MEMBER -->
-    <div id="tab-enroll" class="tab-content" style="display: none;">
+    <!-- TAB 2: REGISTER FACE (CENTERED CAMERA) -->
+    <section id="tab-enroll" class="tab-content" style="display: none;">
       <div class="card">
-        <div class="card-title">
-          <span id="enrollTitle">Enroll New Member</span>
-          <span style="font-size: 0.8rem; color: var(--text-muted);">Multi-Shot ArcFace Capture</span>
-        </div>
-
-        <div class="form-grid form-grid-2">
-          <div class="form-group">
-            <label for="enrollStudentId" id="lblEnrollId">Member / Employee / Student ID</label>
-            <input type="text" id="enrollStudentId" placeholder="e.g. EMP-104 or STU-042" required>
-          </div>
-          <div class="form-group">
-            <label for="enrollName">Full Name</label>
-            <input type="text" id="enrollName" placeholder="e.g. Alex Johnson" required>
+        <div class="card-header">
+          <div>
+            <div class="card-title" id="enrollTitle">Register Face & Profile</div>
+            <div class="card-hint">Center your face inside the oval guide and capture 1–3 angles</div>
           </div>
         </div>
 
-        <div class="form-group" style="margin-top: 1rem;">
-          <label for="enrollDept" id="lblEnrollGroup">Department / Group / Team</label>
-          <input type="text" id="enrollDept" placeholder="e.g. Engineering / Class 10A" value="General">
-        </div>
+        <div class="split-layout">
+          <div>
+            <div class="form-grid">
+              <div class="form-group">
+                <label for="enrollStudentId" id="lblEnrollId">Member ID</label>
+                <input type="text" id="enrollStudentId" placeholder="e.g. EMP-104 or STU-042" required>
+              </div>
+              <div class="form-group">
+                <label for="enrollName">Full Name</label>
+                <input type="text" id="enrollName" placeholder="e.g. Alex Johnson" required>
+              </div>
+              <div class="form-group">
+                <label for="enrollDept" id="lblEnrollGroup">Department / Group</label>
+                <input type="text" id="enrollDept" placeholder="e.g. Engineering / Class 10A" value="General">
+              </div>
+            </div>
 
-        <!-- Camera Viewport for Enrollment -->
-        <div class="camera-wrapper" style="max-width: 360px;">
-          <div class="video-container">
-            <video id="enrollWebcam" playsinline autoplay muted></video>
+            <div class="shots-grid" id="enrollShotsContainer"></div>
+
+            <div style="display: flex; gap: 0.65rem; flex-wrap: wrap;">
+              <button class="btn btn-outline" style="flex: 1;" type="button" onclick="captureEnrollShot()">
+                Capture Shot (1-3)
+              </button>
+              <button class="btn btn-outline btn-sm" type="button" onclick="clearEnrollShots()">
+                Clear
+              </button>
+            </div>
+
+            <div style="margin-top: 0.75rem;">
+              <button class="btn" id="btnSubmitEnroll" onclick="submitEnrollment()" disabled>
+                Complete Registration & Save Face
+              </button>
+            </div>
+
+            <div id="enrollResult" class="result-card"></div>
           </div>
-        </div>
 
-        <div style="display: flex; gap: 0.75rem; margin-bottom: 1rem;">
-          <button class="btn btn-outline" type="button" onclick="captureEnrollShot()">
-            <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><path d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
-            Capture Shot (1-3)
-          </button>
-        </div>
-
-        <!-- Shots preview grid -->
-        <div class="shots-grid" id="enrollShotsContainer">
-          <!-- Populated by JS -->
-        </div>
-
-        <button class="btn" id="btnSubmitEnroll" onclick="submitEnrollment()" disabled>
-          Complete Enrollment & Save Face Template
-        </button>
-
-        <div id="enrollResult" class="result-card"></div>
-      </div>
-    </div>
-
-    <!-- TAB 3: ADMIN / TEACHER PANEL -->
-    <div id="tab-teacher" class="tab-content" style="display: none;">
-      <div class="card">
-        <div class="card-title">
-          <span id="adminSessionTitle">Active Session / Shift Control</span>
-        </div>
-
-        <div class="form-grid form-grid-2">
-          <div class="form-group">
-            <label for="teacherSessionId" id="lblAdminSessionId">Create / Switch Session ID</label>
-            <input type="text" id="teacherSessionId" placeholder="e.g. SHIFT_MORNING_01">
+          <div>
+            <div class="camera-frame">
+              <div class="video-container">
+                <video id="enrollWebcam" class="camera-video" playsinline autoplay muted></video>
+                <div class="face-guide"></div>
+                <div class="liveness-banner">
+                  <span>Keep face centered inside the oval</span>
+                </div>
+              </div>
+            </div>
           </div>
-          <div class="form-group">
-            <label for="teacherCourseName" id="lblAdminSessionTitle">Session / Shift / Event Name</label>
-            <input type="text" id="teacherCourseName" placeholder="e.g. Morning Engineering Shift">
-          </div>
-        </div>
-
-        <div style="margin-top: 1rem;">
-          <button class="btn btn-outline" onclick="createNewSession()">
-            Activate Session
-          </button>
-        </div>
-
-        <div class="esp-info-box" id="espConnectionBox">
-          <div><strong>ESP32 Hardware Endpoint (OTP is hardware-only):</strong> <code id="espEndpointCode">/api/device/otp</code></div>
         </div>
       </div>
+    </section>
 
-      <div class="card">
-        <div class="card-title">
-          <span id="enrolledCount">Enrolled Faces & Vectors</span>
-          <button class="btn btn-outline" style="padding: 0.4rem 0.8rem; font-size: 0.8rem; width: auto;" onclick="loadEnrolledMembers()">
-            Refresh
-          </button>
+    <!-- TAB 3: SEPARATE COMPANY / ADMINISTRATOR PORTAL -->
+    <section id="tab-admin" class="tab-content" style="display: none;">
+      <!-- Admin Auth Gate -->
+      <div id="adminAuthGate" class="split-layout">
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Administrator Sign In</div>
+              <div class="card-hint">Default Org: <code>DEFAULT_ORG</code> / PIN: <code>1234</code></div>
+            </div>
+          </div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="loginCompanyId">Company / Organization ID</label>
+              <input type="text" id="loginCompanyId" placeholder="DEFAULT_ORG" value="DEFAULT_ORG">
+            </div>
+            <div class="form-group">
+              <label for="loginAdminPin">Administrator PIN</label>
+              <input type="password" id="loginAdminPin" placeholder="Enter PIN (e.g. 1234)">
+            </div>
+            <button class="btn" onclick="adminLogin()">Sign In to Company Portal</button>
+          </div>
+          <div id="adminLoginResult" class="result-card"></div>
         </div>
 
-        <div class="table-wrapper">
-          <table>
-            <thead>
-              <tr>
-                <th>ID</th>
-                <th>Name</th>
-                <th>Group / Dept</th>
-                <th>Face Vector</th>
-                <th>Registered</th>
-              </tr>
-            </thead>
-            <tbody id="enrolledMembersBody">
-              <!-- Populated by JS -->
-            </tbody>
-          </table>
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">Register New Company / Admin</div>
+              <div class="card-hint">Create an isolated workspace for your office, school, or event</div>
+            </div>
+          </div>
+          <div class="form-grid">
+            <div class="form-group">
+              <label for="regCompanyId">Company ID (Short Code)</label>
+              <input type="text" id="regCompanyId" placeholder="e.g. ACME_TECH">
+            </div>
+            <div class="form-group">
+              <label for="regCompanyName">Company / School Name</label>
+              <input type="text" id="regCompanyName" placeholder="e.g. Acme Technologies">
+            </div>
+            <div class="form-grid form-grid-2">
+              <div class="form-group">
+                <label for="regAdminName">Administrator Name</label>
+                <input type="text" id="regAdminName" placeholder="e.g. Jane Doe">
+              </div>
+              <div class="form-group">
+                <label for="regAdminPin">Admin PIN (min 4 chars)</label>
+                <input type="password" id="regAdminPin" placeholder="****">
+              </div>
+            </div>
+            <div class="form-grid form-grid-2">
+              <div class="form-group">
+                <label for="regOrgType">Organization Type</label>
+                <select id="regOrgType">
+                  <option value="office">Office / Corporate</option>
+                  <option value="school">School / University</option>
+                  <option value="event">Event / Workshop</option>
+                  <option value="general">General</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="regDeviceKey">ESP32 Device Key (Optional)</label>
+                <input type="text" id="regDeviceKey" placeholder="e.g. esp32_acme_01">
+              </div>
+            </div>
+            <button class="btn btn-accent" onclick="registerCompanyAdmin()">Create Company Workspace</button>
+          </div>
+          <div id="companyRegResult" class="result-card"></div>
         </div>
       </div>
 
-      <div class="card">
-        <div class="card-title">
-          <span id="attendanceCount">Attendance Roster</span>
-          <div style="display: flex; gap: 0.5rem;">
-            <button class="btn btn-outline" style="padding: 0.4rem 0.8rem; font-size: 0.8rem;" onclick="loadSessionAttendance()">
-              Refresh
-            </button>
-            <button class="btn btn-accent" style="padding: 0.4rem 0.8rem; font-size: 0.8rem;" onclick="exportCsv()">
-              Export CSV
-            </button>
+      <!-- Authenticated Company Admin Workspace -->
+      <div id="adminWorkspace" style="display: none;">
+        <div class="admin-banner">
+          <div>
+            <strong id="adminBannerCompany">Company Portal</strong>
+            <div style="font-size: 0.82rem; color: var(--text-secondary);" id="adminBannerDetails">Signed in</div>
+          </div>
+          <button class="btn btn-outline btn-sm" onclick="adminLogout()">Sign Out</button>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title" id="adminSessionTitle">Session & Notice Time Control</div>
+          </div>
+          <div class="form-grid form-grid-2">
+            <div class="form-group">
+              <label for="teacherSessionId" id="lblAdminSessionId">Session / Shift ID</label>
+              <input type="text" id="teacherSessionId" placeholder="e.g. SHIFT_MORNING_01">
+            </div>
+            <div class="form-group">
+              <label for="teacherCourseName" id="lblAdminSessionTitle">Session / Shift Name</label>
+              <input type="text" id="teacherCourseName" placeholder="e.g. Morning Engineering Shift">
+            </div>
+          </div>
+          <div class="form-grid form-grid-2" style="margin-top: 0.9rem;">
+            <div class="form-group">
+              <label for="sessionCutoffTime">On-Time Cutoff Notice (24h HH:MM, Optional)</label>
+              <input type="time" id="sessionCutoffTime">
+            </div>
+            <div class="form-group" style="justify-content: flex-end;">
+              <button class="btn" onclick="createNewSession()">Activate Session</button>
+            </div>
+          </div>
+
+          <div class="info-box">
+            <div><strong>ESP32 Endpoint (60s Single-Use OTP):</strong> <code id="espEndpointCode">/api/device/otp</code></div>
+            <div><strong>Success Verification API:</strong> <code id="successEndpointCode">/api/success</code></div>
           </div>
         </div>
 
-        <div class="table-wrapper">
-          <table>
-            <thead>
-              <tr>
-                <th id="thMemberId">Member ID</th>
-                <th>Name</th>
-                <th id="thGroup">Group / Dept</th>
-                <th>Check-in Time</th>
-                <th>Confidence</th>
-                <th>Status</th>
-              </tr>
-            </thead>
-            <tbody id="attendanceTableBody">
-              <!-- Populated by JS -->
-            </tbody>
-          </table>
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title" id="enrolledCount">Enrolled Faces & Vectors</div>
+            <button class="btn btn-outline btn-sm" onclick="loadEnrolledMembers()">Refresh</button>
+          </div>
+          <div class="table-wrapper">
+            <table>
+              <thead>
+                <tr>
+                  <th>ID</th>
+                  <th>Name</th>
+                  <th>Group / Dept</th>
+                  <th>Face Vector</th>
+                  <th>Registered</th>
+                </tr>
+              </thead>
+              <tbody id="enrolledMembersBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title" id="attendanceCount">Attendance Roster</div>
+            <div style="display: flex; gap: 0.5rem;">
+              <button class="btn btn-outline btn-sm" onclick="loadSessionAttendance()">Refresh</button>
+              <button class="btn btn-accent btn-sm" onclick="exportCsv()">Export CSV</button>
+            </div>
+          </div>
+          <div class="table-wrapper">
+            <table>
+              <thead>
+                <tr>
+                  <th id="thMemberId">Member ID</th>
+                  <th>Name</th>
+                  <th id="thGroup">Group / Dept</th>
+                  <th>Notice Time</th>
+                  <th>Notice</th>
+                  <th>Location</th>
+                  <th>Match</th>
+                </tr>
+              </thead>
+              <tbody id="attendanceTableBody"></tbody>
+            </table>
+          </div>
         </div>
       </div>
-    </div>
+    </section>
 
     <footer>
-      Universal Smart Face & ESP32 OTP Attendance &bull; OpenAPI: <a href="/docs" target="_blank" style="color: #60a5fa; text-decoration: none;">/docs</a> &bull; Health: <a href="/api/health" target="_blank" style="color: #60a5fa; text-decoration: none;">/api/health</a>
+      Universal Smart Attendance Platform &bull; <a href="/docs" target="_blank">OpenAPI /docs</a> &bull; <a href="/api/success" target="_blank">/api/success</a> &bull; <a href="/api/health" target="_blank">/api/health</a>
     </footer>
   </div>
 

@@ -1,109 +1,125 @@
 import sys
+import uuid
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent / "backend"))
 
 from fastapi.testclient import TestClient
 from app.main import app
 from app.database import init_db
-import numpy as np
-import cv2
-import io
+
 
 def get_test_face_bytes() -> bytes:
     with open("test_face.jpg", "rb") as f:
         return f.read()
 
+
 def run_tests():
     print("========================================")
-    print("Testing Smart Attendance System Endpoints")
+    print("Testing Universal Smart Attendance API")
     print("========================================")
     init_db()
     client = TestClient(app)
 
-    # 0. Test Health & DB Status
+    # 0. Health & Success Endpoint
     res = client.get("/api/health")
-    assert res.status_code == 200, f"Health check failed: {res.status_code}"
+    assert res.status_code == 200
     health = res.json()
-    assert "database" in health
     print(f"[PASS] 0. Health check OK: DB={health['database']['backend']} ({health['database']['database_name']})")
 
-    # 1. Test Device OTP (Unauthorized)
-    res = client.post("/api/device/otp", json={"device_key": "wrong_key"})
-    assert res.status_code == 401, f"Expected 401, got {res.status_code}"
-    print("[PASS] 1. Device OTP correctly rejects unauthorized keys (401)")
+    res_success = client.get("/api/success")
+    assert res_success.status_code == 200 and res_success.json()["success"] is True
+    print("[PASS] 1. Dedicated GET /api/success endpoint works")
 
-    # 2. Test Device OTP (Authorized ESP32 Only) & Confirm Frontend Status Does Not Leak OTP
-    res = client.post("/api/device/otp", json={"device_key": "esp32_classroom_key_98765"})
+    # 1. Separate Company / Administrator Registration & Login
+    comp_id = f"TESTCO_{uuid.uuid4().hex[:5].upper()}"
+    dev_key = f"dev_{uuid.uuid4().hex[:8]}"
+    res = client.post("/api/companies/register", json={
+        "company_id": comp_id,
+        "company_name": "Test Robotics Corp",
+        "admin_name": "Ada Lovelace",
+        "admin_pin": "4321",
+        "org_type": "office",
+        "device_key": dev_key,
+    })
+    assert res.status_code == 200, f"Company register failed: {res.text}"
+    session_id = res.json()["default_session_id"]
+
+    res_login = client.post("/api/companies/login", json={"company_id": comp_id, "admin_pin": "4321"})
+    assert res_login.status_code == 200 and res_login.json()["company"]["company_id"] == comp_id
+    assert client.post("/api/companies/login", json={"company_id": comp_id, "admin_pin": "9999"}).status_code == 401
+    print(f"[PASS] 2. Separate Company & Admin Portal auth verified ({comp_id})")
+
+    # 2. Test Device OTP (Unauthorized vs Authorized, 60s expiry, hidden from frontend)
+    assert client.post("/api/device/otp", json={"device_key": "wrong_key"}).status_code == 401
+    res = client.post("/api/device/otp", json={"device_key": dev_key})
     assert res.status_code == 200, f"Expected 200, got {res.status_code}: {res.text}"
     otp_data = res.json()
-    assert "otp" in otp_data and len(otp_data["otp"]) == 6
-    assert "expires_in" in otp_data
+    assert len(otp_data["otp"]) == 6
+    assert 50 <= otp_data["expires_in"] <= 60, f"Expected ~60s OTP expiry, got {otp_data['expires_in']}"
     current_otp = otp_data["otp"]
-    session_id = otp_data["session_id"]
 
-    res_status = client.get("/api/device/status")
-    assert res_status.status_code == 200
-    assert "current_otp" not in res_status.json(), "Frontend status must NOT expose OTP!"
-    print(f"[PASS] 2. ESP32-only OTP active: OTP = {current_otp}, Expires In = {otp_data['expires_in']}s (hidden from frontend)")
+    res_status = client.get(f"/api/device/status?company_id={comp_id}")
+    assert res_status.status_code == 200 and "current_otp" not in res_status.json()
+    assert client.get("/api/otp").status_code == 401
+    assert client.get(f"/api/device/otp?device_key={dev_key}").json()["otp"] == current_otp
+    print(f"[PASS] 3. ESP32-only 60s OTP active: {current_otp} (expires_in={otp_data['expires_in']}s)")
 
-    # 3. Test Student Enrollment
+    # 3. Enroll Member under the Company
     test_face = get_test_face_bytes()
     files = [("photos", ("face1.jpg", test_face, "image/jpeg"))]
     data = {
-        "student_id": "STU-9901",
+        "company_id": comp_id,
+        "member_id": "EMP-101",
         "name": "Jordan Smith",
-        "department": "IoT Robotics"
+        "group": "Engineering",
     }
     res = client.post("/api/enroll", data=data, files=files)
     assert res.status_code == 200, f"Enroll failed: {res.status_code}: {res.text}"
-    enroll_data = res.json()
-    assert enroll_data["status"] == "success"
-    print(f"[PASS] 3. Student Enrollment successful: {enroll_data['message']}")
+    assert res.json()["company_id"] == comp_id
+    print(f"[PASS] 4. Member enrolled under {comp_id}: {res.json()['message']}")
 
-    # 4. Test Attendance with Invalid OTP
+    # 4. Attendance with Location & Notice Time + Single-Use OTP Lock
     files = {"face_image": ("live.jpg", test_face, "image/jpeg")}
     att_data = {
-        "student_id": "STU-9901",
+        "company_id": comp_id,
+        "member_id": "EMP-101",
         "session_id": session_id,
-        "otp": "000000" # wrong OTP
-    }
-    res = client.post("/api/attendance", data=att_data, files=files)
-    assert res.status_code == 403, f"Expected 403 for wrong OTP, got {res.status_code}"
-    print("[PASS] 4. Attendance verification rejects invalid OTP (403)")
-
-    # 5. Test Attendance with Valid OTP and Matching Face
-    files = {"face_image": ("live.jpg", test_face, "image/jpeg")}
-    att_data = {
-        "student_id": "STU-9901",
-        "session_id": session_id,
-        "otp": current_otp
+        "otp": current_otp,
+        "latitude": "28.6139",
+        "longitude": "77.2090",
+        "location_accuracy": "15",
+        "client_time": "2026-11-27 10:35:00",
     }
     res = client.post("/api/attendance", data=att_data, files=files)
     assert res.status_code == 200, f"Attendance failed: {res.status_code}: {res.text}"
     att_res = res.json()
-    assert att_res["status"] == "success"
-    print(f"[PASS] 5. Attendance verified successfully! Match score: {att_res['similarity_score'] * 100:.1f}%")
+    assert att_res["success"] is True
+    assert att_res["location"]["latitude"] == 28.6139
+    assert "2026-11-27 10:35:00" in att_res["notice_time"]
+    receipt_id = att_res["attendance_id"]
+    print(f"[PASS] 5. First user attendance marked! Receipt={receipt_id}, Location={att_res['location']['label']}")
 
-    # 6. Test GET Attendance Session (JSON format)
-    res = client.get(f"/api/attendance/{session_id}")
-    assert res.status_code == 200
-    records = res.json()["records"]
-    assert len(records) >= 1
-    assert records[0]["student_id"] == "STU-9901"
-    print(f"[PASS] 6. GET /api/attendance/{session_id} returned {len(records)} records")
+    # Verify /api/success?attendance_id=...
+    res_rec = client.get(f"/api/success?attendance_id={receipt_id}")
+    assert res_rec.status_code == 200 and res_rec.json()["receipt"]["attendance_id"] == receipt_id
+    print(f"[PASS] 6. GET /api/success?attendance_id={receipt_id} verified")
 
-    # 7. Test GET Attendance Session (CSV export)
-    res = client.get(f"/api/attendance/{session_id}?format=csv")
-    assert res.status_code == 200
-    assert "text/csv" in res.headers.get("content-type", "")
-    assert "STU-9901" in res.text
-    print("[PASS] 7. CSV Export generated successfully with proper headers and data content:")
-    for line in res.text.strip().split("\n"):
-        print("   " + line)
+    # Verify second user CANNOT reuse the same OTP (single user at a time)
+    files2 = {"face_image": ("live2.jpg", test_face, "image/jpeg")}
+    res2 = client.post("/api/attendance", data=att_data, files=files2)
+    assert res2.status_code == 403, f"Expected 403 for reused OTP, got {res2.status_code}"
+    print("[PASS] 7. Single-user lock enforced: second attempt with same OTP rejected (403)")
+
+    # 5. CSV Export with Location & Notice Time
+    res_csv = client.get(f"/api/attendance/{session_id}?company_id={comp_id}&format=csv")
+    assert res_csv.status_code == 200 and "text/csv" in res_csv.headers.get("content-type", "")
+    assert "EMP-101" in res_csv.text and "28.61390" in res_csv.text
+    print("[PASS] 8. CSV Export includes Receipt ID, Company ID, Notice Time, and GPS Location")
 
     print("\n========================================")
-    print("ALL API ENDPOINTS PASSED VERIFICATION!")
+    print("ALL VERIFICATION CHECKS PASSED!")
     print("========================================")
+
 
 if __name__ == "__main__":
     run_tests()

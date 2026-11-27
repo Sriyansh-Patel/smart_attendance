@@ -12,7 +12,7 @@ services:
       - key: DEVICE_SECRET_KEY
         value: esp32_classroom_key_98765
       - key: OTP_LIFETIME_SECONDS
-        value: "30"
+        value: "60"
       - key: FACE_BACKEND
         value: opencv_sface
       - key: FACE_SIMILARITY_THRESHOLD

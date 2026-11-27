@@ -2,12 +2,15 @@
 let currentStream = null;
 let livenessDetector = null;
 let enrolledPhotos = [];
+let currentCompanyId = localStorage.getItem('selected_company_id') || 'DEFAULT_ORG';
+let adminSession = null; // { company_id, company_name, admin_name, admin_pin }
+let currentLocation = { latitude: null, longitude: null, accuracy: null };
 
 const ORG_PROFILES = {
   general: {
     checkinTitle: 'Member Check-in',
-    enrollTitle: 'Enroll New Member',
-    adminSessionTitle: 'Active Session Control',
+    enrollTitle: 'Register Face & Profile',
+    adminSessionTitle: 'Session & Notice Time Control',
     idLabel: 'Member ID',
     idPlaceholder: 'e.g. MEM-2026-001',
     groupLabel: 'Department / Group',
@@ -18,8 +21,8 @@ const ORG_PROFILES = {
   },
   office: {
     checkinTitle: 'Employee Check-in',
-    enrollTitle: 'Enroll Employee',
-    adminSessionTitle: 'Shift / Office Session Control',
+    enrollTitle: 'Register Employee Face',
+    adminSessionTitle: 'Shift & Notice Time Control',
     idLabel: 'Employee ID',
     idPlaceholder: 'e.g. EMP-1042',
     groupLabel: 'Department / Team',
@@ -30,8 +33,8 @@ const ORG_PROFILES = {
   },
   school: {
     checkinTitle: 'Student Check-in',
-    enrollTitle: 'Enroll New Student',
-    adminSessionTitle: 'Class Session Control',
+    enrollTitle: 'Register Student Face',
+    adminSessionTitle: 'Class & Notice Time Control',
     idLabel: 'Student ID / Roll No',
     idPlaceholder: 'e.g. STU-2026-042',
     groupLabel: 'Class / Department',
@@ -42,8 +45,8 @@ const ORG_PROFILES = {
   },
   event: {
     checkinTitle: 'Attendee Check-in',
-    enrollTitle: 'Register Attendee',
-    adminSessionTitle: 'Event / Workshop Control',
+    enrollTitle: 'Register Attendee Face',
+    adminSessionTitle: 'Event & Notice Time Control',
     idLabel: 'Attendee / Pass ID',
     idPlaceholder: 'e.g. PASS-309',
     groupLabel: 'Organization / Role',
@@ -57,13 +60,94 @@ const ORG_PROFILES = {
 document.addEventListener('DOMContentLoaded', () => {
   initOrgMode();
   initTabs();
+  loadCompanies().then(() => {
+    fetchCurrentSession();
+    fetchSystemStatus();
+  });
   initAttendanceCamera();
-  fetchCurrentSession();
+  refreshGeolocation();
+  startLiveClock();
   populateHostEndpoints();
-  fetchSystemStatus();
-  setInterval(fetchSystemStatus, 5000);
+  setInterval(fetchSystemStatus, 6000);
   registerServiceWorker();
 });
+
+function startLiveClock() {
+  const pill = document.getElementById('liveClockPill');
+  const tick = () => {
+    if (pill) {
+      pill.textContent = `Time: ${new Date().toLocaleTimeString()}`;
+    }
+  };
+  tick();
+  setInterval(tick, 1000);
+}
+
+function refreshGeolocation() {
+  const gpsText = document.getElementById('gpsStatusText');
+  if (!navigator.geolocation) {
+    if (gpsText) gpsText.textContent = 'Location: Not supported by browser';
+    return;
+  }
+  if (gpsText) gpsText.textContent = 'Location: Acquiring GPS...';
+  navigator.geolocation.getCurrentPosition(
+    (pos) => {
+      currentLocation = {
+        latitude: pos.coords.latitude,
+        longitude: pos.coords.longitude,
+        accuracy: Math.round(pos.coords.accuracy)
+      };
+      if (gpsText) {
+        gpsText.textContent = `Location: ${currentLocation.latitude.toFixed(5)}, ${currentLocation.longitude.toFixed(5)} (±${currentLocation.accuracy}m)`;
+      }
+    },
+    (err) => {
+      currentLocation = { latitude: null, longitude: null, accuracy: null };
+      if (gpsText) {
+        gpsText.textContent = `Location: Permission denied or unavailable (${err.message})`;
+      }
+    },
+    { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 }
+  );
+}
+
+async function loadCompanies() {
+  try {
+    const res = await fetch('/api/companies');
+    if (!res.ok) return;
+    const companies = await res.json();
+    const select = document.getElementById('companySelect');
+    if (!select) return;
+    select.innerHTML = '';
+    companies.forEach(c => {
+      const opt = document.createElement('option');
+      opt.value = c.company_id;
+      opt.textContent = `${c.company_name} (${c.company_id})`;
+      opt.dataset.orgType = c.org_type || 'general';
+      select.appendChild(opt);
+    });
+    if (companies.some(c => c.company_id === currentCompanyId)) {
+      select.value = currentCompanyId;
+    } else if (companies.length > 0) {
+      currentCompanyId = companies[0].company_id;
+      select.value = currentCompanyId;
+    }
+
+    select.onchange = () => {
+      currentCompanyId = select.value;
+      localStorage.setItem('selected_company_id', currentCompanyId);
+      const selectedOpt = select.options[select.selectedIndex];
+      if (selectedOpt && selectedOpt.dataset.orgType) {
+        document.getElementById('orgModeSelect').value = selectedOpt.dataset.orgType;
+        applyOrgMode(selectedOpt.dataset.orgType);
+      }
+      fetchCurrentSession();
+      fetchSystemStatus();
+    };
+  } catch (e) {
+    console.error('Failed to load companies:', e);
+  }
+}
 
 function initOrgMode() {
   const select = document.getElementById('orgModeSelect');
@@ -93,7 +177,7 @@ function applyOrgMode(mode) {
   document.getElementById('lblEnrollGroup').textContent = p.groupLabel;
   document.getElementById('enrollDept').placeholder = p.groupPlaceholder;
 
-  document.getElementById('lblAdminSessionId').textContent = `Create / Switch ${p.sessionLabel}`;
+  document.getElementById('lblAdminSessionId').textContent = p.sessionLabel;
   document.getElementById('lblAdminSessionTitle').textContent = p.sessionTitleLabel;
   document.getElementById('teacherCourseName').placeholder = p.sessionTitlePlaceholder;
   document.getElementById('thMemberId').textContent = p.idLabel;
@@ -103,7 +187,9 @@ function applyOrgMode(mode) {
 function populateHostEndpoints() {
   const origin = window.location.origin;
   const espCode = document.getElementById('espEndpointCode');
+  const sucCode = document.getElementById('successEndpointCode');
   if (espCode) espCode.textContent = `${origin}/api/device/otp`;
+  if (sucCode) sucCode.textContent = `${origin}/api/success`;
 }
 
 function showResult(element, type, html) {
@@ -119,7 +205,6 @@ function hideResult(element) {
   element.innerHTML = '';
 }
 
-// PWA Service Worker Registration
 function registerServiceWorker() {
   if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('/static/sw.js')
@@ -128,7 +213,6 @@ function registerServiceWorker() {
   }
 }
 
-// Tab Switching
 function initTabs() {
   const tabs = document.querySelectorAll('.tab-btn');
   tabs.forEach(tab => {
@@ -145,10 +229,12 @@ function initTabs() {
         initAttendanceCamera();
       } else if (targetId === 'tab-enroll') {
         initEnrollCamera();
-      } else if (targetId === 'tab-teacher') {
+      } else if (targetId === 'tab-admin') {
         stopCamera();
-        loadSessionAttendance();
-        loadEnrolledMembers();
+        if (adminSession) {
+          loadSessionAttendance();
+          loadEnrolledMembers();
+        }
       }
     });
   });
@@ -174,7 +260,7 @@ async function startCamera(videoElement) {
     return true;
   } catch (err) {
     console.error('Camera error:', err);
-    alert('Unable to access camera: ' + err.message + '\nPlease ensure you are using HTTPS or localhost and have granted camera permissions.');
+    alert('Unable to access camera: ' + err.message + '\nEnsure you are using HTTPS or localhost and granted camera permissions.');
     return false;
   }
 }
@@ -193,19 +279,24 @@ function captureFrameBase64(videoElement) {
   if (!videoElement || videoElement.readyState < 2 || !videoElement.videoWidth) {
     return null;
   }
+  const size = Math.min(videoElement.videoWidth, videoElement.videoHeight);
+  const sx = (videoElement.videoWidth - size) / 2;
+  const sy = (videoElement.videoHeight - size) / 2;
+
   const canvas = document.createElement('canvas');
-  canvas.width = videoElement.videoWidth;
-  canvas.height = videoElement.videoHeight;
+  canvas.width = size;
+  canvas.height = size;
   const ctx = canvas.getContext('2d');
 
-  ctx.translate(canvas.width, 0);
+  // Center-crop square and mirror horizontally to match preview
+  ctx.translate(size, 0);
   ctx.scale(-1, 1);
-  ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+  ctx.drawImage(videoElement, sx, sy, size, size, 0, 0, size, size);
   return canvas.toDataURL('image/jpeg', 0.9);
 }
 
 // -------------------------------------------------------------
-// Attendance Flow (Face + ESP32 OTP + Liveness)
+// Attendance Flow (Single-User Lock + Location + Notice Time)
 // -------------------------------------------------------------
 async function initAttendanceCamera() {
   const video = document.getElementById('webcam');
@@ -231,7 +322,7 @@ async function initAttendanceCamera() {
       const studentId = document.getElementById('studentIdInput').value.trim();
       const otp = document.getElementById('otpInput').value.trim();
       if (!studentId || !otp) {
-        banner.textContent = 'Liveness OK! Enter ID & ESP32 OTP, then click Mark Attendance Now.';
+        banner.textContent = 'Liveness verified! Enter ID & ESP32 OTP, then click Mark Attendance Now.';
         return;
       }
       triggerAttendanceSubmission();
@@ -257,7 +348,7 @@ async function triggerAttendanceSubmission() {
     showResult(
       resultCard,
       'error',
-      '<strong>Missing Info:</strong> Please enter your Member ID and the 6-digit OTP displayed on the ESP32 LED matrix.'
+      '<strong>Missing Info:</strong> Enter your ID and the 6-digit OTP shown on the physical ESP32 LED display.'
     );
     return;
   }
@@ -265,16 +356,15 @@ async function triggerAttendanceSubmission() {
   const video = document.getElementById('webcam');
   const imageBase64 = captureFrameBase64(video);
   if (!imageBase64) {
-    showResult(
-      resultCard,
-      'error',
-      '<strong>Camera Not Ready:</strong> Please wait for the camera preview to appear and try again.'
-    );
+    showResult(resultCard, 'error', '<strong>Camera Not Ready:</strong> Please wait for the camera preview to appear.');
     return;
   }
 
+  const now = new Date();
+  const clientTime = `${now.toLocaleDateString()} ${now.toTimeString().split(' ')[0]}`;
+
   submitBtn.disabled = true;
-  submitBtn.textContent = 'Verifying Face & OTP...';
+  submitBtn.textContent = 'Verifying Face, Location & OTP...';
   hideResult(resultCard);
 
   try {
@@ -282,39 +372,41 @@ async function triggerAttendanceSubmission() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        company_id: currentCompanyId,
         member_id: studentId,
         student_id: studentId,
         session_id: sessionId,
         otp: otp,
+        latitude: currentLocation.latitude,
+        longitude: currentLocation.longitude,
+        location_accuracy: currentLocation.accuracy,
+        client_time: clientTime,
         image_base64: imageBase64
       })
     });
 
     const data = await res.json();
     if (res.ok) {
+      const locLabel = data.location ? data.location.label : 'Not Provided';
       showResult(
         resultCard,
         'success',
-        `<h3>Attendance Marked Successfully!</h3>
-         <p><strong>Name:</strong> ${data.name} (${data.member_id || data.student_id})</p>
-         <p><strong>Session:</strong> ${data.session_id}</p>
-         <p><strong>ArcFace Match:</strong> ${(data.similarity_score * 100).toFixed(1)}%</p>
-         <p style="font-size:0.8rem; margin-top:0.3rem;">Time: ${new Date(data.timestamp).toLocaleTimeString()}</p>`
+        `<h3>Attendance Confirmed</h3>
+         <p><strong>${data.name}</strong> (${data.member_id}) &bull; ${data.company_name}</p>
+         <div class="receipt-grid">
+           <div><strong>Receipt:</strong> ${data.attendance_id}</div>
+           <div><strong>Notice Time:</strong> ${data.notice_time}</div>
+           <div><strong>Location:</strong> ${locLabel}</div>
+           <div><strong>Face Match:</strong> ${(data.similarity_score * 100).toFixed(1)}%</div>
+         </div>
+         <p style="font-size:0.78rem; margin-top:0.5rem;">Verified via <a href="${data.success_url}" target="_blank" style="color:#6ee7b7;">${data.success_url}</a></p>`
       );
       document.getElementById('otpInput').value = '';
     } else {
-      showResult(
-        resultCard,
-        'error',
-        `<strong>Attendance Failed:</strong> ${data.detail || 'Verification unsuccessful.'}`
-      );
+      showResult(resultCard, 'error', `<strong>Check-in Failed:</strong> ${data.detail || 'Verification unsuccessful.'}`);
     }
   } catch (err) {
-    showResult(
-      resultCard,
-      'error',
-      `<strong>Connection Error:</strong> ${err.message}`
-    );
+    showResult(resultCard, 'error', `<strong>Connection Error:</strong> ${err.message}`);
   } finally {
     submitBtn.disabled = false;
     submitBtn.textContent = 'Mark Attendance Now';
@@ -325,7 +417,7 @@ async function triggerAttendanceSubmission() {
 }
 
 // -------------------------------------------------------------
-// Enrollment Flow (Multi-shot Capture)
+// Enrollment Flow (Centered Face Capture)
 // -------------------------------------------------------------
 async function initEnrollCamera() {
   const video = document.getElementById('enrollWebcam');
@@ -338,7 +430,7 @@ function captureEnrollShot() {
   const video = document.getElementById('enrollWebcam');
   const resultCard = document.getElementById('enrollResult');
   if (enrolledPhotos.length >= 3) {
-    alert('Maximum 3 reference shots collected.');
+    alert('Maximum 3 shots captured. Click Clear to retake.');
     return;
   }
   const b64 = captureFrameBase64(video);
@@ -348,6 +440,11 @@ function captureEnrollShot() {
   }
   hideResult(resultCard);
   enrolledPhotos.push(b64);
+  updateEnrollThumbnails();
+}
+
+function clearEnrollShots() {
+  enrolledPhotos = [];
   updateEnrollThumbnails();
 }
 
@@ -371,8 +468,7 @@ function updateEnrollThumbnails() {
     container.appendChild(card);
   }
 
-  const submitBtn = document.getElementById('btnSubmitEnroll');
-  submitBtn.disabled = (enrolledPhotos.length === 0);
+  document.getElementById('btnSubmitEnroll').disabled = (enrolledPhotos.length === 0);
 }
 
 async function submitEnrollment() {
@@ -383,16 +479,12 @@ async function submitEnrollment() {
   const submitBtn = document.getElementById('btnSubmitEnroll');
 
   if (!studentId || !name || enrolledPhotos.length === 0) {
-    showResult(
-      resultCard,
-      'error',
-      '<strong>Missing Info:</strong> Please enter an ID, Full Name, and capture at least 1 photo.'
-    );
+    showResult(resultCard, 'error', '<strong>Missing Info:</strong> Enter an ID, Full Name, and capture at least 1 photo.');
     return;
   }
 
   submitBtn.disabled = true;
-  submitBtn.textContent = 'Enrolling & Extracting Face Vector...';
+  submitBtn.textContent = 'Saving Face Template...';
   hideResult(resultCard);
 
   try {
@@ -400,6 +492,7 @@ async function submitEnrollment() {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
+        company_id: currentCompanyId,
         member_id: studentId,
         student_id: studentId,
         name: name,
@@ -414,41 +507,141 @@ async function submitEnrollment() {
       showResult(
         resultCard,
         'success',
-        `<h3>Enrollment Successful!</h3>
+        `<h3>Face Registered!</h3>
          <p>${data.message}</p>
-         <p><strong>Shots Processed:</strong> ${data.shots_processed} &bull; <strong>Face Vector:</strong> ${data.embedding_dimensions}-D ArcFace embedding saved</p>`
+         <p><strong>Shots Processed:</strong> ${data.shots_processed} &bull; <strong>Vector:</strong> ${data.embedding_dimensions}-D saved</p>`
       );
       enrolledPhotos = [];
       updateEnrollThumbnails();
       document.getElementById('enrollStudentId').value = '';
       document.getElementById('enrollName').value = '';
     } else {
-      showResult(
-        resultCard,
-        'error',
-        `<strong>Enrollment Failed:</strong> ${data.detail || 'No face detected. Ensure good lighting and face the camera.'}`
-      );
+      showResult(resultCard, 'error', `<strong>Registration Failed:</strong> ${data.detail || 'No valid face detected.'}`);
     }
   } catch (err) {
     showResult(resultCard, 'error', `<strong>Error:</strong> ${err.message}`);
   } finally {
     submitBtn.disabled = (enrolledPhotos.length === 0);
-    submitBtn.textContent = 'Complete Enrollment & Save Face Template';
+    submitBtn.textContent = 'Complete Registration & Save Face';
   }
 }
 
 // -------------------------------------------------------------
-// Admin / Teacher Dashboard & Sessions
+// Separate Administrator / Company Portal
 // -------------------------------------------------------------
+async function adminLogin() {
+  const compId = document.getElementById('loginCompanyId').value.trim().toUpperCase();
+  const pin = document.getElementById('loginAdminPin').value.trim();
+  const resCard = document.getElementById('adminLoginResult');
+
+  if (!compId || !pin) {
+    showResult(resCard, 'error', 'Enter both Company ID and Admin PIN.');
+    return;
+  }
+
+  try {
+    const res = await fetch('/api/companies/login', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ company_id: compId, admin_pin: pin })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      showResult(resCard, 'error', `<strong>Login Failed:</strong> ${data.detail}`);
+      return;
+    }
+
+    hideResult(resCard);
+    adminSession = {
+      company_id: data.company.company_id,
+      company_name: data.company.company_name,
+      admin_name: data.company.admin_name,
+      org_type: data.company.org_type,
+      admin_pin: pin
+    };
+    currentCompanyId = adminSession.company_id;
+    localStorage.setItem('selected_company_id', currentCompanyId);
+    const companySel = document.getElementById('companySelect');
+    if (companySel) companySel.value = currentCompanyId;
+
+    document.getElementById('adminAuthGate').style.display = 'none';
+    document.getElementById('adminWorkspace').style.display = 'block';
+    document.getElementById('adminBannerCompany').textContent = `${adminSession.company_name} (${adminSession.company_id})`;
+    document.getElementById('adminBannerDetails').textContent = `Administrator: ${adminSession.admin_name} • Mode: ${adminSession.org_type}`;
+
+    if (data.active_session && data.active_session.session_id) {
+      document.getElementById('sessionIdInput').value = data.active_session.session_id;
+      document.getElementById('teacherSessionId').value = data.active_session.session_id;
+    }
+    loadEnrolledMembers();
+    loadSessionAttendance();
+  } catch (e) {
+    showResult(resCard, 'error', `<strong>Error:</strong> ${e.message}`);
+  }
+}
+
+async function registerCompanyAdmin() {
+  const compId = document.getElementById('regCompanyId').value.trim().toUpperCase();
+  const compName = document.getElementById('regCompanyName').value.trim();
+  const adminName = document.getElementById('regAdminName').value.trim();
+  const adminPin = document.getElementById('regAdminPin').value.trim();
+  const orgType = document.getElementById('regOrgType').value;
+  const deviceKey = document.getElementById('regDeviceKey').value.trim();
+  const resCard = document.getElementById('companyRegResult');
+
+  if (!compId || !compName || !adminName || adminPin.length < 4) {
+    showResult(resCard, 'error', 'Fill Company ID, Company Name, Admin Name, and PIN (min 4 chars).');
+    return;
+  }
+
+  try {
+    const res = await fetch('/api/companies/register', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        company_id: compId,
+        company_name: compName,
+        admin_name: adminName,
+        admin_pin: adminPin,
+        org_type: orgType,
+        device_key: deviceKey || null
+      })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      showResult(resCard, 'error', `<strong>Registration Failed:</strong> ${data.detail}`);
+      return;
+    }
+
+    await loadCompanies();
+    document.getElementById('loginCompanyId').value = data.company.company_id;
+    document.getElementById('loginAdminPin').value = adminPin;
+    showResult(
+      resCard,
+      'success',
+      `<strong>Company Created!</strong> ${data.company.company_name} (${data.company.company_id}). Default session: <code>${data.default_session_id}</code>. Sign in on the left to manage.`
+    );
+  } catch (e) {
+    showResult(resCard, 'error', `<strong>Error:</strong> ${e.message}`);
+  }
+}
+
+function adminLogout() {
+  adminSession = null;
+  document.getElementById('adminWorkspace').style.display = 'none';
+  document.getElementById('adminAuthGate').style.display = 'grid';
+  document.getElementById('loginAdminPin').value = '';
+}
+
 async function fetchCurrentSession() {
   try {
-    const res = await fetch('/api/session/current');
+    const res = await fetch(`/api/session/current?company_id=${encodeURIComponent(currentCompanyId)}`);
     if (res.ok) {
       const data = await res.json();
       if (data && data.session_id) {
         document.getElementById('sessionIdInput').value = data.session_id;
         const badge = document.getElementById('currentSessionBadge');
-        if (badge) badge.textContent = `Active: ${data.session_id}`;
+        if (badge) badge.textContent = `Session: ${data.session_id}`;
       }
     }
   } catch (e) {
@@ -457,8 +650,11 @@ async function fetchCurrentSession() {
 }
 
 async function createNewSession() {
+  if (!adminSession) return;
   const sessionId = document.getElementById('teacherSessionId').value.trim();
   const courseName = document.getElementById('teacherCourseName').value.trim();
+  const cutoffTime = document.getElementById('sessionCutoffTime').value.trim();
+
   if (!sessionId || !courseName) {
     alert('Enter Session ID and Session Name');
     return;
@@ -468,13 +664,23 @@ async function createNewSession() {
     const res = await fetch('/api/sessions', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ session_id: sessionId, session_title: courseName, course_name: courseName })
+      body: JSON.stringify({
+        company_id: adminSession.company_id,
+        admin_pin: adminSession.admin_pin,
+        session_id: sessionId,
+        session_title: courseName,
+        course_name: courseName,
+        cutoff_time: cutoffTime || null
+      })
     });
     if (res.ok) {
-      alert(`Session '${sessionId}' activated.`);
+      alert(`Session '${sessionId}' activated for ${adminSession.company_name}.`);
       document.getElementById('sessionIdInput').value = sessionId;
-      document.getElementById('currentSessionBadge').textContent = `Active: ${sessionId}`;
+      document.getElementById('currentSessionBadge').textContent = `Session: ${sessionId}`;
       loadSessionAttendance();
+    } else {
+      const err = await res.json();
+      alert('Failed: ' + (err.detail || 'Error'));
     }
   } catch (e) {
     alert('Error creating session: ' + e.message);
@@ -482,8 +688,9 @@ async function createNewSession() {
 }
 
 async function loadEnrolledMembers() {
+  const compId = adminSession ? adminSession.company_id : currentCompanyId;
   try {
-    const res = await fetch('/api/members');
+    const res = await fetch(`/api/members?company_id=${encodeURIComponent(compId)}`);
     if (!res.ok) return;
     const members = await res.json();
     const tbody = document.getElementById('enrolledMembersBody');
@@ -494,7 +701,7 @@ async function loadEnrolledMembers() {
     tbody.innerHTML = '';
 
     if (members.length === 0) {
-      tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color: var(--text-muted);">No faces enrolled yet.</td></tr>`;
+      tbody.innerHTML = `<tr><td colspan="5" style="text-align:center; color: var(--text-secondary);">No faces enrolled under ${compId} yet.</td></tr>`;
       return;
     }
 
@@ -516,11 +723,12 @@ async function loadEnrolledMembers() {
 }
 
 async function loadSessionAttendance() {
+  const compId = adminSession ? adminSession.company_id : currentCompanyId;
   const sessionId = document.getElementById('sessionIdInput').value.trim();
   if (!sessionId) return;
 
   try {
-    const res = await fetch(`/api/attendance/${encodeURIComponent(sessionId)}`);
+    const res = await fetch(`/api/attendance/${encodeURIComponent(sessionId)}?company_id=${encodeURIComponent(compId)}`);
     if (res.ok) {
       const data = await res.json();
       renderAttendanceTable(data.records || []);
@@ -533,42 +741,48 @@ async function loadSessionAttendance() {
 function renderAttendanceTable(records) {
   const tbody = document.getElementById('attendanceTableBody');
   tbody.innerHTML = '';
-  document.getElementById('attendanceCount').textContent = `Total Present: ${records.length}`;
+  document.getElementById('attendanceCount').textContent = `Attendance Roster (${records.length})`;
 
   if (records.length === 0) {
-    tbody.innerHTML = `<tr><td colspan="6" style="text-align:center; color: var(--text-muted);">No attendance records yet for this session.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center; color: var(--text-secondary);">No attendance records yet for this session.</td></tr>`;
     return;
   }
 
   records.forEach(r => {
     const tr = document.createElement('tr');
+    const noticeType = r.attendance_notice || 'RECORDED';
+    const noticeBadgeClass = noticeType === 'LATE' ? 'badge-late' : 'badge-present';
+    const loc = r.location_label || 'Not Provided';
+    const timeStr = r.notice_time || new Date(r.timestamp).toLocaleString();
     tr.innerHTML = `
       <td><strong>${r.student_id}</strong></td>
       <td>${r.student_name || 'N/A'}</td>
       <td>${r.department || 'N/A'}</td>
-      <td>${new Date(r.timestamp).toLocaleTimeString()}</td>
+      <td>${timeStr}</td>
+      <td><span class="${noticeBadgeClass}">${noticeType}</span></td>
+      <td>${loc}</td>
       <td><span class="badge-present">${(r.confidence * 100).toFixed(0)}%</span></td>
-      <td><span class="badge-present">PRESENT</span></td>
     `;
     tbody.appendChild(tr);
   });
 }
 
 function exportCsv() {
+  const compId = adminSession ? adminSession.company_id : currentCompanyId;
   const sessionId = document.getElementById('sessionIdInput').value.trim();
   if (!sessionId) {
     alert('Please select an active session first.');
     return;
   }
-  window.location.href = `/api/attendance/${encodeURIComponent(sessionId)}?format=csv`;
+  window.location.href = `/api/attendance/${encodeURIComponent(sessionId)}?company_id=${encodeURIComponent(compId)}&format=csv`;
 }
 
 // -------------------------------------------------------------
-// System Status (Database & ESP32 Hardware Only - No OTP on Frontend)
+// System Status (Database & ESP32 Hardware Only)
 // -------------------------------------------------------------
 async function fetchSystemStatus() {
   try {
-    const res = await fetch('/api/device/status');
+    const res = await fetch(`/api/device/status?company_id=${encodeURIComponent(currentCompanyId)}`);
     if (!res.ok) return;
     const data = await res.json();
 
@@ -576,11 +790,11 @@ async function fetchSystemStatus() {
     if (dbBadge && data.database) {
       const backend = data.database.backend;
       if (backend === 'mongodb' || backend === 'mongodb_data_api') {
-        dbBadge.textContent = `DB: MongoDB (${data.database.database_name})`;
-        dbBadge.className = 'status-pill ok';
+        dbBadge.textContent = `DB: MongoDB`;
+        dbBadge.className = 'pill ok';
       } else {
-        dbBadge.textContent = 'DB: SQLite Fallback';
-        dbBadge.className = 'status-pill warn';
+        dbBadge.textContent = 'DB: SQLite';
+        dbBadge.className = 'pill warn';
       }
     }
 
@@ -588,10 +802,10 @@ async function fetchSystemStatus() {
     if (espBadge && data.esp32) {
       if (data.esp32.online) {
         espBadge.textContent = 'ESP32: Online';
-        espBadge.className = 'status-pill ok';
+        espBadge.className = 'pill ok';
       } else {
-        espBadge.textContent = 'ESP32: Waiting for device';
-        espBadge.className = 'status-pill';
+        espBadge.textContent = 'ESP32: Waiting';
+        espBadge.className = 'pill';
       }
     }
   } catch (e) {}

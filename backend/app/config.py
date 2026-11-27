@@ -25,13 +25,16 @@ MONGODB_DATA_API_URL = os.getenv("MONGODB_DATA_API_URL", "").strip().rstrip("/")
 MONGODB_DATA_API_KEY = os.getenv("MONGODB_DATA_API_KEY", "").strip()
 MONGODB_DATA_SOURCE = os.getenv("MONGODB_DATA_SOURCE", "Cluster0").strip()
 
-# General-Purpose Organization Settings
+# General-Purpose Organization / Default Company Settings
 ORG_NAME = os.getenv("ORG_NAME", "Smart Attendance Hub")
 DEFAULT_ORG_MODE = os.getenv("DEFAULT_ORG_MODE", "general")  # general | office | school | event
+DEFAULT_COMPANY_ID = os.getenv("DEFAULT_COMPANY_ID", "DEFAULT_ORG").strip()
+DEFAULT_COMPANY_NAME = os.getenv("DEFAULT_COMPANY_NAME", "Default Organization").strip()
+DEFAULT_ADMIN_PIN = os.getenv("DEFAULT_ADMIN_PIN", "1234").strip()
 
 # ESP32 Device Authentication
 DEVICE_SECRET_KEY = os.getenv("DEVICE_SECRET_KEY", "esp32_classroom_key_98765")
-OTP_LIFETIME_SECONDS = int(os.getenv("OTP_LIFETIME_SECONDS", "30"))
+OTP_LIFETIME_SECONDS = int(os.getenv("OTP_LIFETIME_SECONDS", "60"))
 
 # Face Recognition Configuration
 # 'opencv_sface' uses lightweight YuNet + SFace (~110MB RAM, ideal for 512MB Render free tier)
