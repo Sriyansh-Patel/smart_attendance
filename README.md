@@ -280,4 +280,5 @@ python test_system.py
 
 All 7 core validation checks (auth rejection, OTP rotation, embedding extraction, invalid OTP rejection, face verification, JSON listing, and CSV export) run and verify in seconds.
 #   s m a r t _ a t t e n d a n c e  
+ #   p 2  
  

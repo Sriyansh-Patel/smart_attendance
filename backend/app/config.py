@@ -31,18 +31,19 @@ DEFAULT_ORG_MODE = os.getenv("DEFAULT_ORG_MODE", "general")  # general | office 
 DEFAULT_COMPANY_ID = os.getenv("DEFAULT_COMPANY_ID", "DEFAULT_ORG").strip()
 DEFAULT_COMPANY_NAME = os.getenv("DEFAULT_COMPANY_NAME", "Default Organization").strip()
 DEFAULT_ADMIN_PIN = os.getenv("DEFAULT_ADMIN_PIN", "1234").strip()
+SUPER_ADMIN_PIN = os.getenv("SUPER_ADMIN_PIN", DEFAULT_ADMIN_PIN).strip()
 
-# ESP32 Device Authentication
-DEVICE_SECRET_KEY = os.getenv("DEVICE_SECRET_KEY", "esp32_classroom_key_98765")
-OTP_LIFETIME_SECONDS = int(os.getenv("OTP_LIFETIME_SECONDS", "60"))
+# ESP8266 Device Authentication & 60s OTP Window
+DEVICE_SECRET_KEY = os.getenv("DEVICE_SECRET_KEY", "esp8266_classroom_key_98765")
+OTP_LIFETIME_SECONDS = max(60, int(os.getenv("OTP_LIFETIME_SECONDS", "60"))) if os.getenv("OTP_LIFETIME_SECONDS") in (None, "", "30", "45") else int(os.getenv("OTP_LIFETIME_SECONDS", "60"))
 
 # Face Recognition Configuration
 # 'opencv_sface' uses lightweight YuNet + SFace (~110MB RAM, ideal for 512MB Render free tier)
 # 'auto' tries InsightFace first then falls back to OpenCV SFace
 FACE_BACKEND = os.getenv("FACE_BACKEND", "opencv_sface" if os.getenv("RENDER") else "auto").strip().lower()
-FACE_SIMILARITY_THRESHOLD = float(os.getenv("FACE_SIMILARITY_THRESHOLD", "0.40"))
+FACE_SIMILARITY_THRESHOLD = float(os.getenv("FACE_SIMILARITY_THRESHOLD", "0.38"))
 MIN_FACE_DETECTION_CONFIDENCE = float(os.getenv("MIN_FACE_DETECTION_CONFIDENCE", "0.60"))
-BLUR_THRESHOLD = float(os.getenv("BLUR_THRESHOLD", "40.0"))
+BLUR_THRESHOLD = float(os.getenv("BLUR_THRESHOLD", "20.0"))
 
 # Server settings (Render / Railway / VPS inject PORT automatically)
 HOST = os.getenv("HOST", "0.0.0.0")

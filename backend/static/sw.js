@@ -1,5 +1,5 @@
 // Smart Attendance PWA Service Worker
-const CACHE_NAME = 'smart-attend-v3';
+const CACHE_NAME = 'smart-attend-v5';
 const STATIC_ASSETS = [
   '/',
   '/static/css/style.css',
@@ -32,8 +32,14 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(fetch(event.request));
     return;
   }
-  // Cache-first for static UI assets
+  // Network-first for static UI assets so UI updates apply immediately
   event.respondWith(
-    caches.match(event.request).then((cached) => cached || fetch(event.request))
+    fetch(event.request)
+      .then((res) => {
+        const copy = res.clone();
+        caches.open(CACHE_NAME).then((cache) => cache.put(event.request, copy));
+        return res;
+      })
+      .catch(() => caches.match(event.request))
   );
 });

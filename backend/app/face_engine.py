@@ -183,16 +183,20 @@ class FaceEngine:
             avg = avg / norm
         return avg.tolist()
 
+    def get_threshold(self) -> float:
+        """Returns the appropriate cosine similarity threshold for the active model."""
+        if self.backend_type == "opencv_sface":
+            # OpenCV SFace official cosine threshold is 0.363; clamp configurable threshold safely
+            return min(FACE_SIMILARITY_THRESHOLD, 0.38) if FACE_SIMILARITY_THRESHOLD > 0.42 else FACE_SIMILARITY_THRESHOLD
+        return FACE_SIMILARITY_THRESHOLD
+
     @staticmethod
     def cosine_similarity(v1: List[float], v2: List[float]) -> float:
-        """Computes Cosine Similarity between two normalized vectors."""
+        """Computes Cosine Similarity between two normalized vectors of matching dimensionality."""
         a = np.array(v1, dtype=np.float64)
         b = np.array(v2, dtype=np.float64)
         if a.shape != b.shape:
-            # Handle dimension mismatch if engine switched
-            min_len = min(len(a), len(b))
-            a = a[:min_len]
-            b = b[:min_len]
+            raise ValueError(f"Embedding dimension mismatch: live={len(a)}-D vs enrolled={len(b)}-D. Please re-register your face.")
         dot = np.dot(a, b)
         norm_a = np.linalg.norm(a)
         norm_b = np.linalg.norm(b)
